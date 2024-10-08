@@ -25,7 +25,7 @@ where
     ///
     /// # Example Implementation:
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// impl ColumnOrdering<MyRow> for ColumnName {
     ///     fn order_by(&self, row_1: &MyRow, row_2: &MyRow, sort_order: SortOrder) -> Ordering {
     ///         match self {
