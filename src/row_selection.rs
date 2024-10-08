@@ -274,10 +274,13 @@ where
 
         // Iter through all the rows and find the rows that have at least one column as selected
         // Keep track of the biggest length of a value of a column
-        for id in &self.active_rows {
-            let target_index = self.indexed_ids.get(id).unwrap();
+        // active rows cannot be used here because hashset does not maintain an order.
+        // So itering will give the rows in a different order than what is shown in the ui
+        for row in &self.formatted_rows {
+            if row.selected_columns.is_empty() {
+                continue;
+            }
 
-            let row = self.formatted_rows.get(*target_index).unwrap();
             for column in &self.active_columns {
                 if row.selected_columns.contains(column) {
                     let column_text = column.column_text(&row.row_data);
