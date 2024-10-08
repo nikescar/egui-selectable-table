@@ -93,6 +93,7 @@ impl App for MainWindow {
                         self.row_to_add = 0;
                         self.row_num = 0;
                         self.table.recreate_rows();
+                        break;
                     }
                 }
                 ctx.request_repaint();
