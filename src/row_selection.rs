@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
 
+#[allow(clippy::too_many_lines)]
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
     Row: Clone + Send,
@@ -22,20 +23,20 @@ where
         self.active_columns.insert(column_name.clone());
         self.active_rows.insert(id);
 
-        let target_index = self.indexed_ids.get(&id).unwrap();
+        let target_index = self.indexed_ids.get(&id).expect("target_index not found");
 
         if self.select_full_row {
             self.active_columns.extend(self.all_columns.clone());
 
             self.formatted_rows
                 .get_mut(*target_index)
-                .unwrap()
+                .expect("Row not found")
                 .selected_columns
                 .extend(self.all_columns.clone());
         } else {
             self.formatted_rows
                 .get_mut(*target_index)
-                .unwrap()
+                .expect("Row not found")
                 .selected_columns
                 .insert(column_name.clone());
         }
@@ -62,7 +63,7 @@ where
         self.active_columns.insert(column_name.clone());
         self.beyond_drag_point = true;
 
-        let drag_start = self.drag_started_on.clone().unwrap();
+        let drag_start = self.drag_started_on.clone().expect("Drag start not found");
 
         // number of the column of drag starting point and the current cell that we are trying to select
         let drag_start_num = self.column_to_num(&drag_start.1);
@@ -91,9 +92,7 @@ where
             new_column_set.insert(drag_start.1.clone());
             self.active_columns = new_column_set;
         } else {
-            while ongoing_val.is_some() {
-                let col = ongoing_val.unwrap();
-
+            while let Some(col) = ongoing_val {
                 let next_column = if get_previous {
                     self.next_column(&col)
                     // col.get_next()
@@ -115,9 +114,15 @@ where
             self.active_columns = new_column_set;
         }
 
-        let current_row_index = self.indexed_ids.get(&id).unwrap();
+        let current_row_index = self
+            .indexed_ids
+            .get(&id)
+            .expect("Current row index not found");
         // The row the mouse pointer is on
-        let current_row = self.formatted_rows.get_mut(*current_row_index).unwrap();
+        let current_row = self
+            .formatted_rows
+            .get_mut(*current_row_index)
+            .expect("Current row not found");
 
         // If this row already selects the column that we are trying to select, it means the mouse
         // moved backwards from an active column to another active column.
@@ -134,39 +139,44 @@ where
             && self.last_active_row.is_some()
             && self.last_active_column.is_some()
         {
-            let last_active_column = self.last_active_column.clone().unwrap();
-
-            // Remove the last column selection from the current row where the mouse is if
-            // the previous row and the current one matches
-            //
-            // column column column
-            // column column column
-            // column column (mouse is currently here) column(mouse was here)
-            //
-            // We unselect the bottom right corner column
-            if &last_active_column != column_name && self.last_active_row.unwrap() == id {
-                current_row.selected_columns.remove(&last_active_column);
-                self.active_columns.remove(&last_active_column);
-            }
-
-            // Get the last row where the mouse was
-            let last_row_index = self
-                .indexed_ids
-                .get(&self.last_active_row.unwrap())
-                .unwrap();
-            let last_row = self.formatted_rows.get_mut(*last_row_index).unwrap();
-
-            self.last_active_row = Some(id);
-
-            // If on the same row as the last row, then unselect the column from all other select row
-            if id == last_row.id {
-                if &last_active_column != column_name {
-                    self.last_active_column = Some(column_name.clone());
+            if let (Some(last_active_column), Some(last_active_row)) =
+                (self.last_active_column.clone(), self.last_active_row)
+            {
+                // Remove the last column selection from the current row where the mouse is if
+                // the previous row and the current one matches
+                //
+                // column column column
+                // column column column
+                // column column (mouse is currently here) column(mouse was here)
+                //
+                // We unselect the bottom right corner column
+                if &last_active_column != column_name && last_active_row == id {
+                    current_row.selected_columns.remove(&last_active_column);
+                    self.active_columns.remove(&last_active_column);
                 }
-            } else {
-                no_checking = true;
-                // Mouse went 1 row above or below. So just clear all selection from that previous row
-                last_row.selected_columns.clear();
+
+                // Get the last row where the mouse was
+                let last_row_index = self
+                    .indexed_ids
+                    .get(&last_active_row)
+                    .expect("Last row not found");
+                let last_row = self
+                    .formatted_rows
+                    .get_mut(*last_row_index)
+                    .expect("Last row not found");
+
+                self.last_active_row = Some(id);
+
+                // If on the same row as the last row, then unselect the column from all other select row
+                if id == last_row.id {
+                    if &last_active_column != column_name {
+                        self.last_active_column = Some(column_name.clone());
+                    }
+                } else {
+                    no_checking = true;
+                    // Mouse went 1 row above or below. So just clear all selection from that previous row
+                    last_row.selected_columns.clear();
+                }
             }
         } else {
             // We are in a new row which we have not selected before
@@ -178,21 +188,27 @@ where
                 .clone_from(&self.active_columns);
         }
 
-        let current_row_index = self.indexed_ids.get(&id).unwrap().to_owned();
+        let current_row_index = self
+            .indexed_ids
+            .get(&id)
+            .expect("Current row index not found")
+            .to_owned();
 
         // Get the row number where the drag started on
-        let drag_start_index = self.indexed_ids.get(&drag_start.0).unwrap().to_owned();
+        let drag_start_index = self
+            .indexed_ids
+            .get(&drag_start.0)
+            .expect("Could not find drag start")
+            .to_owned();
 
-        if no_checking {
-            self.remove_row_selection(current_row_index, drag_start_index, is_ctrl_pressed);
-        } else {
+        if !no_checking {
             // If drag started on row 1, currently on row 5, check from row 4 to 1 and select all columns
             // else go through all rows till a row without any selected column is found. Applied both by incrementing or decrementing index.
             // In case of fast mouse movement following drag started point mitigates the risk of some rows not getting selected
             self.check_row_selection(true, current_row_index, drag_start_index);
             self.check_row_selection(false, current_row_index, drag_start_index);
-            self.remove_row_selection(current_row_index, drag_start_index, is_ctrl_pressed);
         }
+        self.remove_row_selection(current_row_index, drag_start_index, is_ctrl_pressed);
     }
 
     fn check_row_selection(&mut self, check_previous: bool, index: usize, drag_start: usize) {
@@ -206,20 +222,29 @@ where
 
         let index = if check_previous { index - 1 } else { index + 1 };
 
-        let current_row = self.formatted_rows.get(index).unwrap();
-        let mut unselected_row = current_row.selected_columns.is_empty();
+        let current_row = self
+            .formatted_rows
+            .get(index)
+            .expect("Current row not found");
 
         // if for example drag started on row 5 and ended on row 10 but missed drag on row 7
         // Mark the rows as selected till the drag start row is hit (if recursively going that way)
-        if (check_previous && index >= drag_start) || (!check_previous && index <= drag_start) {
-            unselected_row = false;
-        }
+        let unselected_row = if (check_previous && index >= drag_start)
+            || (!check_previous && index <= drag_start)
+        {
+            false
+        } else {
+            current_row.selected_columns.is_empty()
+        };
 
-        let target_row = self.formatted_rows.get_mut(index).unwrap();
+        let target_row = self
+            .formatted_rows
+            .get_mut(index)
+            .expect("Target row not found");
 
         if !unselected_row {
             if self.select_full_row {
-                target_row.selected_columns.extend(self.all_columns.clone())
+                target_row.selected_columns.extend(self.all_columns.clone());
             } else {
                 target_row.selected_columns.clone_from(&self.active_columns);
             }
@@ -243,8 +268,15 @@ where
     ) {
         let active_ids = self.active_rows.clone();
         for id in active_ids {
-            let ongoing_index = self.indexed_ids.get(&id).unwrap().to_owned();
-            let target_row = self.formatted_rows.get_mut(ongoing_index).unwrap();
+            let ongoing_index = self
+                .indexed_ids
+                .get(&id)
+                .expect("Could not get ongoing index")
+                .to_owned();
+            let target_row = self
+                .formatted_rows
+                .get_mut(ongoing_index)
+                .expect("target row not found");
 
             if current_index > drag_start {
                 if ongoing_index >= drag_start && ongoing_index <= current_index {
@@ -272,8 +304,11 @@ where
 
     pub fn unselect_all(&mut self) {
         for id in &self.active_rows {
-            let id_index = self.indexed_ids.get(id).unwrap();
-            let target_row = self.formatted_rows.get_mut(*id_index).unwrap();
+            let id_index = self.indexed_ids.get(id).expect("Could not get id index");
+            let target_row = self
+                .formatted_rows
+                .get_mut(*id_index)
+                .expect("Could not get row");
             target_row.selected_columns.clear();
         }
         self.active_columns.clear();
@@ -367,7 +402,7 @@ where
     }
 
     #[must_use]
-    pub fn select_full_row(mut self) -> Self {
+    pub const fn select_full_row(mut self) -> Self {
         self.select_full_row = true;
         self
     }
