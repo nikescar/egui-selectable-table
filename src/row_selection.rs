@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
 
-impl<Row, F> SelectableTable<Row, F>
+impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
     Row: Clone + Send,
     F: Eq
@@ -14,8 +14,9 @@ where
         + Send
         + Sync
         + Default
-        + ColumnOperations<Row, F>
+        + ColumnOperations<Row, F, Conf>
         + ColumnOrdering<Row>,
+    Conf: Default,
 {
     pub(crate) fn select_single_row_cell(&mut self, id: i64, column_name: &F) {
         self.active_columns.insert(column_name.clone());
@@ -23,12 +24,25 @@ where
 
         let target_index = self.indexed_ids.get(&id).unwrap();
 
-        self.formatted_rows
-            .get_mut(*target_index)
-            .unwrap()
-            .selected_columns
-            .insert(column_name.clone());
+        if self.select_full_row {
+            self.active_columns.extend(self.all_columns.clone());
+
+            self.formatted_rows
+                .get_mut(*target_index)
+                .unwrap()
+                .selected_columns
+                .extend(self.all_columns.clone());
+        } else {
+            self.formatted_rows
+                .get_mut(*target_index)
+                .unwrap()
+                .selected_columns
+                .insert(column_name.clone());
+        }
+
+        self.active_rows.insert(id);
     }
+
     pub(crate) fn select_dragged_row_cell(
         &mut self,
         id: i64,
@@ -38,6 +52,10 @@ where
         // If both same then the mouse is still on the same column on the same row so nothing to process
         if self.last_active_row == Some(id) && self.last_active_column == Some(column_name.clone())
         {
+            return;
+        }
+
+        if self.formatted_rows.is_empty() {
             return;
         }
 
@@ -54,7 +72,6 @@ where
 
         let get_previous = ongoing_column_num > drag_start_num;
         let mut ongoing_val = Some(drag_start.1.clone());
-        // let mut ongoing_val = Some(ColumnName::from_num(drag_start_num));
 
         // row1: column(drag started here) column column
         // row2: column                    column column
@@ -71,7 +88,6 @@ where
         if is_ctrl_pressed {
             self.active_columns.insert(column_name.clone());
         } else if ongoing_column_num == drag_start_num {
-            // new_column_set.insert(ColumnName::from_num(drag_start_num));
             new_column_set.insert(drag_start.1.clone());
             self.active_columns = new_column_set;
         } else {
@@ -134,11 +150,11 @@ where
             }
 
             // Get the last row where the mouse was
-            let current_row_index = self
+            let last_row_index = self
                 .indexed_ids
                 .get(&self.last_active_row.unwrap())
                 .unwrap();
-            let last_row = self.formatted_rows.get_mut(*current_row_index).unwrap();
+            let last_row = self.formatted_rows.get_mut(*last_row_index).unwrap();
 
             self.last_active_row = Some(id);
 
@@ -202,7 +218,11 @@ where
         let target_row = self.formatted_rows.get_mut(index).unwrap();
 
         if !unselected_row {
-            target_row.selected_columns.clone_from(&self.active_columns);
+            if self.select_full_row {
+                target_row.selected_columns.extend(self.all_columns.clone())
+            } else {
+                target_row.selected_columns.clone_from(&self.active_columns);
+            }
             self.active_rows.insert(target_row.id);
 
             if check_previous {
@@ -228,13 +248,21 @@ where
 
             if current_index > drag_start {
                 if ongoing_index >= drag_start && ongoing_index <= current_index {
-                    target_row.selected_columns.clone_from(&self.active_columns);
+                    if self.select_full_row {
+                        target_row.selected_columns.extend(self.all_columns.clone());
+                    } else {
+                        target_row.selected_columns.clone_from(&self.active_columns);
+                    }
                 } else if !is_ctrl_pressed {
                     target_row.selected_columns = HashSet::new();
                     self.active_rows.remove(&target_row.id);
                 }
             } else if ongoing_index <= drag_start && ongoing_index >= current_index {
-                target_row.selected_columns.clone_from(&self.active_columns);
+                if self.select_full_row {
+                    target_row.selected_columns.extend(self.all_columns.clone());
+                } else {
+                    target_row.selected_columns.clone_from(&self.active_columns);
+                }
             } else if !is_ctrl_pressed {
                 target_row.selected_columns = HashSet::new();
                 self.active_rows.remove(&target_row.id);
@@ -253,10 +281,11 @@ where
         self.last_active_column = None;
         self.active_rows.clear();
     }
+
     pub fn select_all(&mut self) {
         let mut all_rows = Vec::new();
 
-        for row in self.formatted_rows.iter_mut() {
+        for row in &mut self.formatted_rows {
             row.selected_columns.extend(self.all_columns.clone());
             all_rows.push(row.id);
         }
@@ -269,6 +298,9 @@ where
 
     pub fn copy_selected_cells(&mut self, ui: &mut Ui) {
         let mut selected_rows = Vec::new();
+        if self.select_full_row {
+            self.active_columns.extend(self.all_columns.clone());
+        }
 
         let mut column_max_length = HashMap::new();
 
@@ -332,5 +364,15 @@ where
         }
 
         ui.ctx().output_mut(|i| i.copied_text = to_copy);
+    }
+
+    #[must_use]
+    pub fn select_full_row(mut self) -> Self {
+        self.select_full_row = true;
+        self
+    }
+
+    pub fn set_select_full_row(&mut self, status: bool) {
+        self.select_full_row = status;
     }
 }
