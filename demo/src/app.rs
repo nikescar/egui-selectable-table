@@ -1,34 +1,55 @@
 use eframe::{App, CreationContext, Frame};
 use egui::{
     global_theme_preference_switch, Align, Button, CentralPanel, Context, Layout, SelectableLabel,
-    Slider, ThemePreference,
+    Slider, ThemePreference, Ui,
 };
 use egui_extras::Column;
-use egui_selectable_table::{ColumnOperations, ColumnOrdering, SelectableTable, SortOrder};
+use egui_selectable_table::{
+    AutoScroll, ColumnOperations, ColumnOrdering, SelectableRow, SelectableTable, SortOrder,
+};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+#[derive(Default, Clone, Copy)]
+pub struct Config {
+    no_row_counting: bool,
+    counting_ongoing: bool,
+}
+
 pub struct MainWindow {
+    select_entire_row: bool,
     add_rows: bool,
+    auto_scrolling: bool,
     row_to_add: u64,
     row_num: u64,
     row_count: u64,
-    table: SelectableTable<TableRow, TableColumns>,
+    scroll_speed: f32,
+    table: SelectableTable<TableRow, TableColumns, Config>,
+    conf: Config,
 }
 
 impl MainWindow {
     pub fn new(cc: &CreationContext) -> Self {
         cc.egui_ctx
             .options_mut(|a| a.theme_preference = ThemePreference::Light);
+
         let all_columns = TableColumns::iter().collect();
+
         // Auto reload after each 10k table row add or modification
-        let table = SelectableTable::new(all_columns).set_auto_reload(10000);
+        let table = SelectableTable::new(all_columns)
+            .auto_reload(10_000)
+            .auto_scroll();
+
         MainWindow {
+            select_entire_row: false,
             add_rows: false,
+            auto_scrolling: true,
             row_to_add: 0,
             row_num: 0,
             row_count: 0,
+            scroll_speed: 30.0,
             table,
+            conf: Config::default(),
         }
     }
 }
@@ -48,12 +69,39 @@ impl App for MainWindow {
                     self.add_rows = true;
                     self.row_to_add = self.row_count;
 
-                    // Clearly previously added rows
-                    self.table.add_modify_row(|t, _, _| {
-                        t.clear();
-                        None
-                    });
+                    // Clear previously added rows
+                    self.table.clear_all_rows();
+                    self.table.set_auto_reload(Some(10000));
+                    self.conf.counting_ongoing = true;
                 };
+                ui.separator();
+                if ui
+                    .checkbox(&mut self.select_entire_row, "Select Entire Row?")
+                    .changed()
+                {
+                    self.table.set_select_full_row(self.select_entire_row);
+                };
+                ui.separator();
+                ui.checkbox(&mut self.conf.no_row_counting, "Stop Row Creation Count?");
+            });
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Auto scrolling speed:");
+                if ui
+                    .add(Slider::new(&mut self.scroll_speed, 10.0..=100.0))
+                    .changed()
+                {
+                    let scroll = AutoScroll::new(self.auto_scrolling).max_speed(self.scroll_speed);
+                    self.table.update_auto_scroll(scroll);
+                };
+                ui.separator();
+                if ui
+                    .checkbox(&mut self.auto_scrolling, "Enable Auto Scrolling on drag?")
+                    .changed()
+                {
+                    let scroll = AutoScroll::new(self.auto_scrolling);
+                    self.table.update_auto_scroll(scroll);
+                }
             });
             ui.separator();
 
@@ -72,10 +120,11 @@ impl App for MainWindow {
                 }
                 table
             });
+            self.table.set_config(self.conf);
 
             if self.add_rows {
                 for _num in 0..1000 {
-                    self.table.add_modify_row(|_, _, _| {
+                    self.table.add_modify_row(|_| {
                         let new_row = TableRow {
                             field_1: self.row_num,
                             field_2: self.row_num as i64 * 10,
@@ -83,7 +132,7 @@ impl App for MainWindow {
                             field_4: format!("field 4 with row num: {}", self.row_num),
                             field_5: format!("field 5 with row num: {}", self.row_num),
                             field_6: format!("field 6 with row num: {}", self.row_num),
-                            field_7: format!("field 7 with row num: {}", self.row_num),
+                            create_count: 0,
                         };
                         Some(new_row)
                     });
@@ -92,10 +141,15 @@ impl App for MainWindow {
                         self.add_rows = false;
                         self.row_to_add = 0;
                         self.row_num = 0;
+                        // forcefully reload the table as there are no more rows coming
                         self.table.recreate_rows();
+                        self.conf.counting_ongoing = false;
+                        self.table.set_auto_reload(None);
+
                         break;
                     }
                 }
+                // Ensure it does not wait for an event on the app to load the new rows
                 ctx.request_repaint();
             }
         });
@@ -110,7 +164,7 @@ struct TableRow {
     field_4: String,
     field_5: String,
     field_6: String,
-    field_7: String,
+    create_count: u64,
 }
 
 #[derive(Eq, PartialEq, Debug, Ord, PartialOrd, Clone, Copy, Hash, Default, EnumIter)]
@@ -125,7 +179,7 @@ enum TableColumns {
     Field7,
 }
 
-impl ColumnOperations<TableRow, TableColumns> for TableColumns {
+impl ColumnOperations<TableRow, TableColumns, Config> for TableColumns {
     fn column_text(&self, row: &TableRow) -> String {
         match self {
             TableColumns::Field1 => row.field_1.to_string(),
@@ -134,14 +188,14 @@ impl ColumnOperations<TableRow, TableColumns> for TableColumns {
             TableColumns::Field4 => row.field_4.to_string(),
             TableColumns::Field5 => row.field_5.to_string(),
             TableColumns::Field6 => row.field_6.to_string(),
-            TableColumns::Field7 => row.field_7.to_string(),
+            TableColumns::Field7 => row.create_count.to_string(),
         }
     }
     fn create_header(
         &self,
-        ui: &mut egui::Ui,
-        sort_order: Option<egui_selectable_table::SortOrder>,
-        _table: &mut SelectableTable<TableRow, TableColumns>,
+        ui: &mut Ui,
+        sort_order: Option<SortOrder>,
+        _table: &mut SelectableTable<TableRow, TableColumns, Config>,
     ) -> Option<egui::Response> {
         let mut text = match self {
             TableColumns::Field1 => "Field 1",
@@ -150,7 +204,7 @@ impl ColumnOperations<TableRow, TableColumns> for TableColumns {
             TableColumns::Field4 => "Field 4",
             TableColumns::Field5 => "Field 5",
             TableColumns::Field6 => "Field 6",
-            TableColumns::Field7 => "Field 7",
+            TableColumns::Field7 => "Row Creation Count",
         }
         .to_string();
         if let Some(sort) = sort_order {
@@ -165,60 +219,66 @@ impl ColumnOperations<TableRow, TableColumns> for TableColumns {
     }
     fn create_table_row(
         &self,
-        ui: &mut egui::Ui,
-        row: &TableRow,
-        selected: bool,
-        _table: &mut SelectableTable<TableRow, TableColumns>,
+        ui: &mut Ui,
+        row: &SelectableRow<TableRow, TableColumns>,
+        cell_selected: bool,
+        table: &mut SelectableTable<TableRow, TableColumns, Config>,
     ) -> egui::Response {
+        let row_id = row.id;
+        let row_data = &row.row_data;
+        let config = table.config;
+
         let text = match self {
-            TableColumns::Field1 => row.field_1.to_string(),
-            TableColumns::Field2 => row.field_2.to_string(),
-            TableColumns::Field3 => row.field_3.to_string(),
-            TableColumns::Field4 => row.field_4.to_string(),
-            TableColumns::Field5 => row.field_5.to_string(),
-            TableColumns::Field6 => row.field_6.to_string(),
-            TableColumns::Field7 => row.field_7.to_string(),
+            TableColumns::Field1 => row_data.field_1.to_string(),
+            TableColumns::Field2 => row_data.field_2.to_string(),
+            TableColumns::Field3 => row_data.field_3.to_string(),
+            TableColumns::Field4 => row_data.field_4.to_string(),
+            TableColumns::Field5 => row_data.field_5.to_string(),
+            TableColumns::Field6 => row_data.field_6.to_string(),
+            TableColumns::Field7 => row_data.create_count.to_string(),
         };
-        ui.add_sized(ui.available_size(), SelectableLabel::new(selected, text))
+
+        if !config.no_row_counting {
+            // Persist the creation count, while row creation is ongoing, this will get auto
+            // reloaded. After there is no more row creation, auto reload is turned off and won't
+            // reload until next manual intervention. While no more rows are being created, we are
+            // modifying the rows directly that are being shown in the UI which is much less
+            // expensive and gets shown to the UI immediately
+            // Continue to update the persistent row data to ensure once reload happens, the
+            // previous count data is not lost
+            table.add_modify_row(|table| {
+                let target_row = table.get_mut(&row_id).unwrap();
+                target_row.row_data.create_count += 1;
+                None
+            });
+            if !config.counting_ongoing {
+                table.add_modify_shown_row(|t, index| {
+                    let target_index = index.get(&row_id).unwrap();
+                    let target_row = t.get_mut(*target_index).unwrap();
+                    target_row.row_data.create_count += 1;
+                });
+            }
+        }
+
+        // The same approach works for both cell based selection and for entire row selection on
+        // drag.
+        ui.add_sized(
+            ui.available_size(),
+            SelectableLabel::new(cell_selected, text),
+        )
     }
 }
 
 impl ColumnOrdering<TableRow> for TableColumns {
-    fn order_by(
-        &self,
-        row_1: &TableRow,
-        row_2: &TableRow,
-        sort_order: SortOrder,
-    ) -> std::cmp::Ordering {
+    fn order_by(&self, row_1: &TableRow, row_2: &TableRow) -> std::cmp::Ordering {
         match self {
-            TableColumns::Field1 => match sort_order {
-                SortOrder::Ascending => row_1.field_1.cmp(&row_2.field_1),
-                SortOrder::Descending => row_1.field_1.cmp(&row_2.field_1).reverse(),
-            },
-            TableColumns::Field2 => match sort_order {
-                SortOrder::Ascending => row_1.field_2.cmp(&row_2.field_2),
-                SortOrder::Descending => row_1.field_2.cmp(&row_2.field_2).reverse(),
-            },
-            TableColumns::Field3 => match sort_order {
-                SortOrder::Ascending => row_1.field_3.cmp(&row_2.field_3),
-                SortOrder::Descending => row_1.field_3.cmp(&row_2.field_3).reverse(),
-            },
-            TableColumns::Field4 => match sort_order {
-                SortOrder::Ascending => row_1.field_4.cmp(&row_2.field_4),
-                SortOrder::Descending => row_1.field_4.cmp(&row_2.field_4).reverse(),
-            },
-            TableColumns::Field5 => match sort_order {
-                SortOrder::Ascending => row_1.field_5.cmp(&row_2.field_5),
-                SortOrder::Descending => row_1.field_5.cmp(&row_2.field_5).reverse(),
-            },
-            TableColumns::Field6 => match sort_order {
-                SortOrder::Ascending => row_1.field_6.cmp(&row_2.field_6),
-                SortOrder::Descending => row_1.field_6.cmp(&row_2.field_6).reverse(),
-            },
-            TableColumns::Field7 => match sort_order {
-                SortOrder::Ascending => row_1.field_7.cmp(&row_2.field_7),
-                SortOrder::Descending => row_1.field_7.cmp(&row_2.field_7).reverse(),
-            },
+            TableColumns::Field1 => row_1.field_1.cmp(&row_2.field_1),
+            TableColumns::Field2 => row_1.field_2.cmp(&row_2.field_2),
+            TableColumns::Field3 => row_1.field_3.cmp(&row_2.field_3),
+            TableColumns::Field4 => row_1.field_4.cmp(&row_2.field_4),
+            TableColumns::Field5 => row_1.field_5.cmp(&row_2.field_5),
+            TableColumns::Field6 => row_1.field_6.cmp(&row_2.field_6),
+            TableColumns::Field7 => row_1.create_count.cmp(&row_2.create_count),
         }
     }
 }
