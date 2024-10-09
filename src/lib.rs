@@ -292,8 +292,6 @@ where
         self.active_columns.clear();
     }
 
-    /// Show Ui. The column list must be given in the correct order, from the first column to the
-    /// last column.
     pub fn show_ui<Fn>(&mut self, ui: &mut Ui, table_builder: Fn)
     where
         Fn: FnOnce(TableBuilder) -> TableBuilder,

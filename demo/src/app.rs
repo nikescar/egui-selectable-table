@@ -262,10 +262,26 @@ impl ColumnOperations<TableRow, TableColumns, Config> for TableColumns {
 
         // The same approach works for both cell based selection and for entire row selection on
         // drag.
-        ui.add_sized(
+        let resp = ui.add_sized(
             ui.available_size(),
             SelectableLabel::new(cell_selected, text),
-        )
+        );
+
+        resp.context_menu(|ui| {
+            if ui.button("Select All Rows").clicked() {
+                table.select_all();
+                ui.close_menu();
+            }
+            if ui.button("Unselect All Rows").clicked() {
+                table.unselect_all();
+                ui.close_menu();
+            }
+            if ui.button("Copy Selected Cells").clicked() {
+                table.copy_selected_cells(ui);
+                ui.close_menu();
+            }
+        });
+        resp
     }
 }
 
