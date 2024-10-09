@@ -2,7 +2,7 @@
 
 A library for [egui](https://github.com/emilk/egui) to create tables with draggable cell and row selection.
 
-[](https://github.com/user-attachments/assets/0742d553-d428-43af-b7f9-978c58fc8047)
+[](https://github.com/user-attachments/assets/88c889fd-9686-4b96-801e-dadb87de3176)
 
 ## Features
 
