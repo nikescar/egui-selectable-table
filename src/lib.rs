@@ -325,11 +325,11 @@ where
             .header(20.0, |mut header| {
                 for column_name in &self.all_columns.clone() {
                     header.col(|ui| {
-                        let mut sort_order = None;
-
-                        if &self.sorted_by == column_name {
-                            sort_order = Some(self.sort_order);
-                        }
+                        let sort_order = if &self.sorted_by == column_name {
+                            Some(self.sort_order)
+                        } else {
+                            None
+                        };
 
                         let Some(resp) = column_name.create_header(ui, sort_order, self) else {
                             return;
@@ -436,7 +436,7 @@ where
 
     fn change_sort_order(&mut self) {
         self.unselect_all();
-        if let SortOrder::Ascending = self.sort_order {
+        if matches!(self.sort_order, SortOrder::Ascending) {
             self.sort_order = SortOrder::Descending;
         } else {
             self.sort_order = SortOrder::Ascending;

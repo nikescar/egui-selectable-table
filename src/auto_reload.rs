@@ -3,7 +3,7 @@ use std::hash::Hash;
 use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
 
 #[derive(Default)]
-pub(crate) struct AutoReload {
+pub struct AutoReload {
     reload_after: Option<u32>,
     reload_count: u32,
 }
@@ -33,7 +33,7 @@ where
     Conf: Default,
 {
     #[must_use]
-    pub fn auto_reload(mut self, count: u32) -> Self {
+    pub const fn auto_reload(mut self, count: u32) -> Self {
         self.auto_reload.reload_after = Some(count);
         self
     }
