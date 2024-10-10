@@ -12,7 +12,6 @@ use strum_macros::EnumIter;
 
 #[derive(Default, Clone, Copy)]
 pub struct Config {
-    no_row_counting: bool,
     counting_ongoing: bool,
 }
 
@@ -24,6 +23,7 @@ pub struct MainWindow {
     row_num: u64,
     row_count: u64,
     scroll_speed: f32,
+    reload_counter: u32,
     table: SelectableTable<TableRow, TableColumns, Config>,
     conf: Config,
 }
@@ -48,6 +48,7 @@ impl MainWindow {
             row_num: 0,
             row_count: 0,
             scroll_speed: 30.0,
+            reload_counter: 0,
             table,
             conf: Config::default(),
         }
@@ -61,7 +62,7 @@ impl App for MainWindow {
                 global_theme_preference_switch(ui);
                 ui.separator();
                 ui.label("Total Rows to add:");
-                ui.add(Slider::new(&mut self.row_count, 10000..=200000));
+                ui.add(Slider::new(&mut self.row_count, 10000..=1_000_000));
 
                 let button_enabled = !self.add_rows;
                 let button = ui.add_enabled(button_enabled, Button::new("Create Rows"));
@@ -71,7 +72,7 @@ impl App for MainWindow {
 
                     // Clear previously added rows
                     self.table.clear_all_rows();
-                    self.table.set_auto_reload(Some(10000));
+                    self.table.set_auto_reload(Some(self.reload_counter));
                     self.conf.counting_ongoing = true;
                 };
                 ui.separator();
@@ -81,8 +82,6 @@ impl App for MainWindow {
                 {
                     self.table.set_select_full_row(self.select_entire_row);
                 };
-                ui.separator();
-                ui.checkbox(&mut self.conf.no_row_counting, "Stop Row Creation Count?");
             });
             ui.separator();
             ui.horizontal(|ui| {
@@ -104,6 +103,12 @@ impl App for MainWindow {
                 }
             });
             ui.separator();
+            ui.horizontal(|ui| {
+                ui.label("Row Recreation Counter:");
+                ui.add(Slider::new(&mut self.reload_counter, 5000..=100000));
+                ui.label("Higher value = Less often the UI is refreshed")
+            });
+            ui.separator();
 
             self.table.show_ui(ui, |table| {
                 let mut table = table
@@ -123,7 +128,7 @@ impl App for MainWindow {
             self.table.set_config(self.conf);
 
             if self.add_rows {
-                for _num in 0..1000 {
+                for _num in 0..10000 {
                     self.table.add_modify_row(|_| {
                         let new_row = TableRow {
                             field_1: self.row_num,
@@ -238,26 +243,24 @@ impl ColumnOperations<TableRow, TableColumns, Config> for TableColumns {
             TableColumns::Field7 => row_data.create_count.to_string(),
         };
 
-        if !config.no_row_counting {
-            // Persist the creation count, while row creation is ongoing, this will get auto
-            // reloaded. After there is no more row creation, auto reload is turned off and won't
-            // reload until next manual intervention. While no more rows are being created, we are
-            // modifying the rows directly that are being shown in the UI which is much less
-            // expensive and gets shown to the UI immediately
-            // Continue to update the persistent row data to ensure once reload happens, the
-            // previous count data is not lost
-            table.add_modify_row(|table| {
-                let target_row = table.get_mut(&row_id).unwrap();
+        // Persist the creation count, while row creation is ongoing, this will get auto
+        // reloaded. After there is no more row creation, auto reload is turned off and won't
+        // reload until next manual intervention. While no more rows are being created, we are
+        // modifying the rows directly that are being shown in the UI which is much less
+        // expensive and gets shown to the UI immediately
+        // Continue to update the persistent row data to ensure once reload happens, the
+        // previous count data is not lost
+        table.add_modify_row(|table| {
+            let target_row = table.get_mut(&row_id).unwrap();
+            target_row.row_data.create_count += 1;
+            None
+        });
+        if !config.counting_ongoing {
+            table.add_modify_shown_row(|t, index| {
+                let target_index = index.get(&row_id).unwrap();
+                let target_row = t.get_mut(*target_index).unwrap();
                 target_row.row_data.create_count += 1;
-                None
             });
-            if !config.counting_ongoing {
-                table.add_modify_shown_row(|t, index| {
-                    let target_index = index.get(&row_id).unwrap();
-                    let target_row = t.get_mut(*target_index).unwrap();
-                    target_row.row_data.create_count += 1;
-                });
-            }
         }
 
         // The same approach works for both cell based selection and for entire row selection on

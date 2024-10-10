@@ -348,11 +348,10 @@ where
                 }
             })
             .body(|body| {
-                let table_rows = self.formatted_rows.clone();
-                body.rows(25.0, table_rows.len(), |row| {
+                body.rows(25.0, self.formatted_rows.len(), |row| {
                     let index = row.index();
-                    let row_data = &table_rows[index];
-                    self.handle_table_body(row, row_data);
+                    let row_data = self.formatted_rows[index].clone();
+                    self.handle_table_body(row, &row_data);
 
                     // TODO: Maybe allow auto creating row number column if true?
                     //
