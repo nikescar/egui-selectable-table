@@ -8,11 +8,10 @@ A library for [egui](https://github.com/emilk/egui) to create tables with dragga
 
 - Individual cell or full-row selection while dragging
 - Auto vertical table scrolling during drag with adjustable parameters
+- Sort rows by clicking headers, both ascending and descending
 - Customizable rows and header UI
 - Built-in select all (Ctrl+A) and copy (Ctrl+C) functionality
 - Handles 150k~ rows with no noticeable lag
-
-
 
 ## Usage
 

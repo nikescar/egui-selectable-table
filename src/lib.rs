@@ -348,7 +348,7 @@ where
                 }
             })
             .body(|body| {
-                let table_rows = self.rows();
+                let table_rows = self.formatted_rows.clone();
                 body.rows(25.0, table_rows.len(), |row| {
                     let index = row.index();
                     let row_data = &table_rows[index];
@@ -403,15 +403,6 @@ where
         table(&mut self.formatted_rows, &self.indexed_ids);
     }
 
-    /// Called the beginning when creating the Table UI. Ensures that `formatted_rows` is never
-    /// empty
-    fn rows(&mut self) -> Vec<SelectableRow<Row, F>> {
-        if self.formatted_rows.len() != self.rows.len() {
-            self.sort_rows();
-        }
-        self.formatted_rows.clone()
-    }
-
     /// Sort the rows to the current sorting order and column and save them for later reuse
     fn sort_rows(&mut self) {
         let mut row_data: Vec<SelectableRow<Row, F>> = self.rows.clone().into_values().collect();
@@ -455,6 +446,7 @@ where
         self.formatted_rows.clear();
         self.active_rows.clear();
         self.active_columns.clear();
+        self.sort_rows();
     }
 
     fn first_column(&self) -> F {
