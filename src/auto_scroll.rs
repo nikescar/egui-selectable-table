@@ -31,16 +31,19 @@ impl AutoScroll {
             ..Default::default()
         }
     }
-    #[must_use] pub const fn distance_from_min(mut self, distance: f32) -> Self {
+    #[must_use]
+    pub const fn distance_from_min(mut self, distance: f32) -> Self {
         self.distance_from_min = distance;
         self
     }
-    #[must_use] pub const fn distance_from_max(mut self, distance: f32) -> Self {
+    #[must_use]
+    pub const fn distance_from_max(mut self, distance: f32) -> Self {
         self.distance_from_max = distance;
         self
     }
 
-    #[must_use] pub const fn max_speed(mut self, speed: f32) -> Self {
+    #[must_use]
+    pub const fn max_speed(mut self, speed: f32) -> Self {
         self.max_speed = speed;
         self
     }
