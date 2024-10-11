@@ -106,9 +106,16 @@ impl App for MainWindow {
             ui.horizontal(|ui| {
                 ui.label("Row Recreation Counter:");
                 ui.add(Slider::new(&mut self.reload_counter, 5000..=100000));
-                ui.label("Higher value = Less often the UI is refreshed")
+                ui.label("Higher value = Less often the UI is refreshed. Can improve performance")
             });
             ui.separator();
+
+            if self.row_count * 10 / 100 > self.reload_counter as u64 {
+                ui.horizontal(|ui| {
+                    ui.label("⚠️ Row count too high. Increase recreation counter to reduce lag");
+                });
+                ui.separator();
+            }
 
             self.table.show_ui(ui, |table| {
                 let mut table = table
@@ -256,7 +263,7 @@ impl ColumnOperations<TableRow, TableColumns, Config> for TableColumns {
             None
         });
         if !config.counting_ongoing {
-            table.add_modify_shown_row(|t, index| {
+            table.modify_shown_row(|t, index| {
                 let target_index = index.get(&row_id).unwrap();
                 let target_row = t.get_mut(*target_index).unwrap();
                 target_row.row_data.create_count += 1;
