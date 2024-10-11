@@ -4,11 +4,11 @@ mod row_selection;
 
 use auto_reload::AutoReload;
 pub use auto_scroll::AutoScroll;
+use egui::ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use egui::{Event, Key, Response, Sense, Ui};
 use egui_extras::{TableBuilder, TableRow};
 use rayon::prelude::*;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 /// Enum representing the possible sort orders for table columns.
@@ -26,7 +26,8 @@ pub enum SortOrder {
 /// This trait should be implemented by users to specify how rows should be
 /// compared for sorting purposes. The implementation can vary depending on
 /// the type of column. For instance, string comparisons or numeric comparisons
-/// can be handled differently depending on the column.
+/// can be handled differently depending on the column. Should only be implemented for Ascending
+/// ordering, in case of Descending, it is handled internally.
 ///
 /// # Example
 /// Suppose you have a struct `MyRow` with fields like `user_id`, `name`, and `username`.
@@ -45,14 +46,15 @@ pub enum SortOrder {
 /// ```
 pub trait ColumnOrdering<Row>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
 {
     /// Compare two rows and return the ordering result (`Ordering`).
     ///
     /// This function defines how to order two rows based on the specific column.
     /// It returns `Ordering::Less`, `Ordering::Equal`, or `Ordering::Greater`
     /// to indicate whether `row_1` should be placed before, after, or at the same
-    /// position as `row_2` when sorting.
+    /// position as `row_2` when sorting. Should only be implemented for ascending ordering, in
+    /// case of Descending, it is handled internally.
     ///
     /// # Arguments
     /// * `row_1` - The first row for comparison.
@@ -67,7 +69,7 @@ where
 ///
 /// This trait allows users to define how each column should behave within a table.
 /// This includes how headers should be displayed, how each row in the table should be rendered,
-/// and how to extract column-specific text for display purposes.
+/// and how to extract column-specific text.
 ///
 /// # Type Parameters:
 /// * `Row` - The type representing each row in the table.
@@ -79,7 +81,7 @@ where
 /// the context of your table UI.
 pub trait ColumnOperations<Row, F, Conf>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq
         + Hash
         + Clone
@@ -94,9 +96,9 @@ where
     /// Create the header UI for this column.
     ///
     /// This function is responsible for creating the visual representation of the column header.
-    /// The `sort_order` argument indicates whether the column is sorted and, if so, in which
+    /// The `sort_order` argument indicates whether the column is currently used for sorting and, if so, in which
     /// direction (ascending or descending). You can customize the header appearance based on
-    /// this information, for example by adding icons or text.
+    /// this information, for example by adding icons or text. Return `None` for no header.
     ///
     /// # Arguments
     /// * `ui` - A mutable reference to the UI context.
@@ -115,13 +117,14 @@ where
     /// Create the UI for a specific row in this column.
     ///
     /// This function is responsible for rendering the content of this column for a given row.
-    /// It should handle user interactions like clicking or selection as necessary.
+    /// It should handle user interactions like clicking or selection as necessary. Mutable table
+    /// access is provided for modifyiing other rows as necessary.
     ///
     /// # Arguments
     /// * `ui` - A mutable reference to the UI context.
     /// * `row` - A reference to the current `SelectableRow` for this table.
     /// * `column_selected` - A boolean indicating whether this column is selected.
-    /// * `table` - A mutable reference to the `SelectableTable`, allowing interaction with the table state.
+    /// * `table` - A mutable reference to the `SelectableTable` for modifying table data
     ///
     /// # Returns
     /// * `Response` - The result of the UI interaction for this row.
@@ -163,7 +166,7 @@ where
 #[derive(Clone)]
 pub struct SelectableRow<Row, F>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq + Hash + Clone + Ord + Send + Sync + Default,
 {
     pub row_data: Row,
@@ -176,11 +179,11 @@ where
 /// # Type Parameters
 /// * `Row` - The type representing each row in the table.
 /// * `F` - A type used to identify columns, often an enum or field type.
-/// * `Conf` - Configuration type for additional table settings. This is made available anytime
+/// * `Conf` - Configuration type for additional table settings passed by the user. This is made available anytime
 ///    when creating or modifying rows
 pub struct SelectableTable<Row, F, Conf>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq
         + Hash
         + Clone
@@ -233,7 +236,7 @@ where
 
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq
         + Hash
         + Clone
@@ -245,6 +248,18 @@ where
         + ColumnOrdering<Row>,
     Conf: Default,
 {
+    /// Creates a new `SelectableTable` with the provided columns in a specified order.
+    ///
+    /// # Parameters:
+    /// - `columns`: A `Vec<F>` representing the columns. Columns must be passed in the correct order (e.g., 1 to 10).
+    ///
+    /// # Returns:
+    /// - A new instance of `SelectableTable`.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let table = SelectableTable::new(vec![col1, col2, col3]);
+    /// ```
     #[must_use]
     pub fn new(columns: Vec<F>) -> Self {
         let all_columns = columns.clone();
@@ -275,16 +290,44 @@ where
         }
     }
 
+    /// Updates the table's configuration with the given `conf`.
+    ///
+    /// # Parameters:
+    /// - `conf`: The new configuration of type `Conf`, which is user-defined and allows
+    ///   passing data to help with row/table modification.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.set_config(my_config);
+    /// ```
     pub fn set_config(&mut self, conf: Conf) {
         self.config = conf;
     }
 
+    /// Sets a configuration in a builder-style pattern.
+    ///
+    /// # Parameters:
+    /// - `conf`: A configuration of type `Conf`. The user can pass any data to help with row creation or modification.
+    ///
+    /// # Returns:
+    /// - The updated `SelectableTable` with the new configuration applied.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let table = SelectableTable::new(vec![col1, col2, col3]).config(my_config);
+    /// ```
     #[must_use]
     pub fn config(mut self, conf: Conf) -> Self {
         self.config = conf;
         self
     }
 
+    /// Clears all rows from the table, including the displayed ones
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.clear_all_rows();
+    /// ```
     pub fn clear_all_rows(&mut self) {
         self.rows.clear();
         self.formatted_rows.clear();
@@ -292,6 +335,16 @@ where
         self.active_columns.clear();
     }
 
+    /// Displays the UI for the table and uses the provided `TableBuilder` for creating the table UI.
+    ///
+    /// # Parameters:
+    /// - `ui`: The UI context where the table will be rendered.
+    /// - `table_builder`: A closure that receives and modifies the `TableBuilder`.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.show_ui(ui, |builder| builder.column(column1));
+    /// ```
     pub fn show_ui<Fn>(&mut self, ui: &mut Ui, table_builder: Fn)
     where
         Fn: FnOnce(TableBuilder) -> TableBuilder,
@@ -321,6 +374,7 @@ where
                 ctx.request_repaint();
             }
         };
+
         let output = table
             .header(20.0, |mut header| {
                 for column_name in &self.all_columns.clone() {
@@ -334,6 +388,8 @@ where
                         let Some(resp) = column_name.create_header(ui, sort_order, self) else {
                             return;
                         };
+
+                        let resp = resp.interact(Sense::click());
 
                         if resp.clicked() {
                             let is_selected = &self.sorted_by == column_name;
@@ -364,9 +420,29 @@ where
         self.update_scroll_offset(scroll_offset);
     }
 
-    /// Add or modify existing rows as necessary. Must call `recreate_rows` for any modifications
-    /// to show up in the UI. Use `auto_reload` to auto recreate rows after X amount of
-    /// modifications.
+    /// Modify or add rows to the table. Changes are not immediately reflected in the UI.
+    /// You must call [`recreate_rows`](#method.recreate_rows) to apply these changes visually.
+    ///
+    /// # Parameters:
+    /// - `table`: A closure that takes a mutable reference to the rows and optionally returns a new row.
+    ///   If a row is returned, it will be added to the table.
+    ///
+    /// # Auto Reload:
+    /// - Use [`auto_reload`](#method.auto_reload) to automatically refresh the UI after a specified
+    ///   number of row modifications or additions.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.add_modify_row(|rows| {
+    ///     let my_row = rows.get_mut(row_id).unwrap();
+    ///     // modify your row as necessary
+    ///
+    ///     let new_row = MyRow {
+    ///         // Define your row values
+    ///     };
+    ///     Some(new_row) // Optionally add a new row
+    /// });
+    /// ```
     pub fn add_modify_row<Fn>(&mut self, table: Fn)
     where
         Fn: FnOnce(&mut HashMap<i64, SelectableRow<Row, F>>) -> Option<Row>,
@@ -374,7 +450,7 @@ where
         let new_row = table(&mut self.rows);
 
         if let Some(row) = new_row {
-            let selected_columns: HashSet<F> = HashSet::new();
+            let selected_columns = HashSet::new();
             let new_row = SelectableRow {
                 row_data: row,
                 id: self.last_id_used,
@@ -391,11 +467,27 @@ where
         }
     }
 
-    /// Only modify the rows that are being shown in the UI. Data will be lost if rows are
-    /// recreated and not added/modified via `add_modify_rows`
-    /// Does not count toward auto reload
-    /// This should not be used if rows are being recreated actively
-    pub fn add_modify_shown_row<Fn>(&mut self, table: Fn)
+    /// Modify only the rows currently displayed in the UI.
+    ///
+    /// # Important:
+    /// - This does not require calling `recreate_rows` to reflect changes.
+    /// - Should not be used when rows are frequently recreated, as data might be lost.
+    /// - Does not contribute toward `auto_reload` count.
+    ///
+    /// # Parameters:
+    /// - `table`: A closure that takes a mutable reference to the currently formatted rows and an index map.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.modify_shown_row(|formatted_rows, indexed_ids| {
+    /// let row_id = 0;
+    /// let target_index = indexed_ids.get(row_id).unwrap();
+    /// let row = formatted_rows.get_mut(target_index).unwrap();
+    /// /* modify rows */
+    ///
+    /// });
+    /// ```
+    pub fn modify_shown_row<Fn>(&mut self, table: Fn)
     where
         Fn: FnOnce(&mut Vec<SelectableRow<Row, F>>, &HashMap<i64, usize>),
     {
@@ -404,7 +496,8 @@ where
 
     /// Sort the rows to the current sorting order and column and save them for later reuse
     fn sort_rows(&mut self) {
-        let mut row_data: Vec<SelectableRow<Row, F>> = self.rows.clone().into_values().collect();
+        let mut row_data: Vec<SelectableRow<Row, F>> =
+            self.rows.par_iter().map(|(_, v)| v.clone()).collect();
 
         row_data.par_sort_by(|a, b| {
             let ordering = self.sorted_by.order_by(&a.row_data, &b.row_data);
@@ -415,7 +508,7 @@ where
         });
 
         let indexed_data = row_data
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(index, row)| (row.id, index))
             .collect();
@@ -424,6 +517,8 @@ where
         self.formatted_rows = row_data;
     }
 
+    /// Change the current sort order from ascending to descending and vice versa. Will unselect
+    /// all selected rows
     fn change_sort_order(&mut self) {
         self.unselect_all();
         if matches!(self.sort_order, SortOrder::Ascending) {
@@ -433,14 +528,24 @@ where
         }
     }
 
+    /// Change the column that is currently being used for sorting. Will unselect all rows
     fn change_sorted_by(&mut self, sort_by: &F) {
         self.unselect_all();
         self.sorted_by = sort_by.clone();
         self.sort_order = SortOrder::default();
     }
 
-    /// Recreate the rows that are being shown in the UI in the next frame load. Frequently calling
-    /// this with a very large number of rows can cause performance issues.
+    /// Recreates the rows shown in the UI for the next frame load.
+    ///
+    /// # Performance:
+    /// - Should be used sparingly for large datasets as frequent calls can lead to performance issues.
+    /// - Consider calling after every X amount row updates, based on how frequently new rows are being
+    ///     added or use `AutoScroll` for automatic reload.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.recreate_rows();
+    /// ```
     pub fn recreate_rows(&mut self) {
         self.formatted_rows.clear();
         self.active_rows.clear();
@@ -448,14 +553,17 @@ where
         self.sort_rows();
     }
 
+    /// The first column that was passed by the user
     fn first_column(&self) -> F {
         self.all_columns[0].clone()
     }
 
+    /// The last column that was passed by the user
     fn last_column(&self) -> F {
         self.all_columns[self.all_columns.len() - 1].clone()
     }
 
+    /// Convert a number to a column value
     fn column_to_num(&self, column: &F) -> usize {
         *self
             .column_number
@@ -463,6 +571,7 @@ where
             .expect("Not in the column list")
     }
 
+    /// Get the next column of the provided column
     fn next_column(&self, column: &F) -> F {
         let current_column_num = self.column_to_num(column);
         if current_column_num == self.all_columns.len() - 1 {
@@ -472,6 +581,7 @@ where
         }
     }
 
+    /// Get the previous column of the provided column
     fn previous_column(&self, column: &F) -> F {
         let current_column_num = self.column_to_num(column);
         if current_column_num == 0 {
@@ -481,6 +591,7 @@ where
         }
     }
 
+    /// Builds the table's Body section
     fn handle_table_body(&mut self, mut row: TableRow, row_data: &SelectableRow<Row, F>) {
         for column_name in &self.all_columns.clone() {
             row.col(|ui| {

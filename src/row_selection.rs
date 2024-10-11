@@ -1,5 +1,5 @@
+use egui::ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use egui::Ui;
-use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
@@ -7,7 +7,7 @@ use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
 #[allow(clippy::too_many_lines)]
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq
         + Hash
         + Clone
@@ -95,9 +95,7 @@ where
             while let Some(col) = ongoing_val {
                 let next_column = if get_previous {
                     self.next_column(&col)
-                    // col.get_next()
                 } else {
-                    // col.get_previous()
                     self.previous_column(&col)
                 };
 
@@ -286,7 +284,7 @@ where
                         target_row.selected_columns.clone_from(&self.active_columns);
                     }
                 } else if !is_ctrl_pressed {
-                    target_row.selected_columns = HashSet::new();
+                    target_row.selected_columns.clear();
                     self.active_rows.remove(&target_row.id);
                 }
             } else if ongoing_index <= drag_start && ongoing_index >= current_index {
@@ -296,7 +294,7 @@ where
                     target_row.selected_columns.clone_from(&self.active_columns);
                 }
             } else if !is_ctrl_pressed {
-                target_row.selected_columns = HashSet::new();
+                target_row.selected_columns.clear();
                 self.active_rows.remove(&target_row.id);
             }
         }

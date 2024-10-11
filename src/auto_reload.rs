@@ -24,7 +24,7 @@ impl AutoReload {
 
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
-    Row: Clone + Send,
+    Row: Clone + Send + Sync,
     F: Eq
         + Hash
         + Clone
