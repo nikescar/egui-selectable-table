@@ -11,7 +11,7 @@ A library for [egui](https://github.com/emilk/egui) to create tables with dragga
 - Sort rows by clicking headers, both ascending and descending
 - Customizable rows and header UI
 - Built-in select all (Ctrl+A) and copy (Ctrl+C) functionality
-- Handles 150k~ rows with no noticeable lag
+- Capable of handling a substantial amount of rows (1M+) with proper settings without noticeable lags
 
 ## Usage
 
