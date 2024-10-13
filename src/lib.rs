@@ -5,8 +5,8 @@ mod row_selection;
 use auto_reload::AutoReload;
 pub use auto_scroll::AutoScroll;
 use egui::ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use egui::{Event, Key, Response, Sense, Ui};
-use egui_extras::{TableBuilder, TableRow};
+use egui::{Event, Key, Label, Response, Sense, Ui};
+use egui_extras::{Column, TableBuilder, TableRow};
 use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::hash::Hash;
@@ -232,6 +232,9 @@ where
     /// Additional Parameters passed by you, available when creating new rows or header. Can
     /// contain anything implementing the `Default` trait
     pub config: Conf,
+
+    /// Whether to add the row serial column to the table
+    add_serial_column: bool,
 }
 
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
@@ -287,6 +290,7 @@ where
             auto_reload: AutoReload::default(),
             select_full_row: false,
             config: Conf::default(),
+            add_serial_column: false,
         }
     }
 
@@ -333,6 +337,7 @@ where
         self.formatted_rows.clear();
         self.active_rows.clear();
         self.active_columns.clear();
+        self.last_id_used = 0;
     }
 
     /// Displays the UI for the table and uses the provided `TableBuilder` for creating the table UI.
@@ -366,6 +371,10 @@ where
 
         let mut table = TableBuilder::new(ui);
 
+        if self.add_serial_column {
+            table = table.column(Column::initial(25.0).clip(true));
+        }
+
         table = table_builder(table);
 
         if self.drag_started_on.is_some() {
@@ -377,6 +386,11 @@ where
 
         let output = table
             .header(20.0, |mut header| {
+                if self.add_serial_column {
+                    header.col(|ui| {
+                        ui.add_sized(ui.available_size(), Label::new(""));
+                    });
+                }
                 for column_name in &self.all_columns.clone() {
                     header.col(|ui| {
                         let sort_order = if &self.sorted_by == column_name {
@@ -389,7 +403,8 @@ where
                             return;
                         };
 
-                        let resp = resp.interact(Sense::click());
+                        // Response click sense is not forced. So if a header should not be used
+                        // for sorting, without click there won't be any actions.
 
                         if resp.clicked() {
                             let is_selected = &self.sorted_by == column_name;
@@ -404,16 +419,16 @@ where
                 }
             })
             .body(|body| {
-                body.rows(25.0, self.formatted_rows.len(), |row| {
+                body.rows(25.0, self.formatted_rows.len(), |mut row| {
                     let index = row.index();
                     let row_data = self.formatted_rows[index].clone();
-                    self.handle_table_body(row, &row_data);
 
-                    // TODO: Maybe allow auto creating row number column if true?
-                    //
-                    // row.col(|ui| {
-                    //     ui.add_sized(ui.available_size(), Label::new(format!("{}", index + 1)));
-                    // });
+                    if self.add_serial_column {
+                        row.col(|ui| {
+                            ui.add_sized(ui.available_size(), Label::new(format!("{}", index + 1)));
+                        });
+                    }
+                    self.handle_table_body(row, &row_data);
                 });
             });
         let scroll_offset = output.state.offset.y;
@@ -431,9 +446,12 @@ where
     /// - Use [`auto_reload`](#method.auto_reload) to automatically refresh the UI after a specified
     ///   number of row modifications or additions.
     ///
+    /// # Returns
+    /// * `Option<i64>` - The row id that is used internally for the new row
+    ///
     /// # Example:
     /// ```rust,ignore
-    /// table.add_modify_row(|rows| {
+    /// let new_row_id = table.add_modify_row(|rows| {
     ///     let my_row = rows.get_mut(row_id).unwrap();
     ///     // modify your row as necessary
     ///
@@ -443,11 +461,13 @@ where
     ///     Some(new_row) // Optionally add a new row
     /// });
     /// ```
-    pub fn add_modify_row<Fn>(&mut self, table: Fn)
+    pub fn add_modify_row<Fn>(&mut self, table: Fn) -> Option<i64>
     where
         Fn: FnOnce(&mut HashMap<i64, SelectableRow<Row, F>>) -> Option<Row>,
     {
         let new_row = table(&mut self.rows);
+
+        let mut to_return = None;
 
         if let Some(row) = new_row {
             let selected_columns = HashSet::new();
@@ -456,6 +476,7 @@ where
                 id: self.last_id_used,
                 selected_columns,
             };
+            to_return = Some(self.last_id_used);
             self.rows.insert(new_row.id, new_row);
             self.last_id_used += 1;
         }
@@ -465,6 +486,7 @@ where
         if reload {
             self.recreate_rows();
         }
+        to_return
     }
 
     /// Modify only the rows currently displayed in the UI.
@@ -487,11 +509,11 @@ where
     ///
     /// });
     /// ```
-    pub fn modify_shown_row<Fn>(&mut self, table: Fn)
+    pub fn modify_shown_row<Fn>(&mut self, mut rows: Fn)
     where
-        Fn: FnOnce(&mut Vec<SelectableRow<Row, F>>, &HashMap<i64, usize>),
+        Fn: FnMut(&mut Vec<SelectableRow<Row, F>>, &HashMap<i64, usize>),
     {
-        table(&mut self.formatted_rows, &self.indexed_ids);
+        rows(&mut self.formatted_rows, &self.indexed_ids);
     }
 
     /// Sort the rows to the current sorting order and column and save them for later reuse
@@ -540,7 +562,7 @@ where
     /// # Performance:
     /// - Should be used sparingly for large datasets as frequent calls can lead to performance issues.
     /// - Consider calling after every X amount row updates, based on how frequently new rows are being
-    ///     added or use `AutoScroll` for automatic reload.
+    ///     added or use [`auto_scroll`](#method.auto_scroll) for automatic reload.
     ///
     /// # Example:
     /// ```rust,ignore
@@ -598,6 +620,7 @@ where
                 let selected = row_data.selected_columns.contains(column_name);
                 let mut resp = column_name.create_table_row(ui, row_data, selected, self);
 
+                // Drag sense is forced otherwise there is no point of this library.
                 resp = resp.interact(Sense::drag());
 
                 if resp.drag_started() {
@@ -645,5 +668,56 @@ where
                 }
             });
         }
+    }
+
+    /// Returns the total number of rows currently being displayed in the UI.
+    ///
+    /// # Returns:
+    /// - `usize`: The number of rows that are formatted and ready for display.
+    pub fn total_displayed_rows(&self) -> usize {
+        self.formatted_rows.len()
+    }
+
+    /// Returns the total number of rows in the table (both displayed and non-displayed).
+    ///
+    /// # Returns:
+    /// - `usize`: The total number of rows stored in the table, regardless of whether they are being displayed or not.
+    pub fn total_rows(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Provides a reference to the rows currently being displayed in the UI.
+    ///
+    /// # Returns:
+    /// - `&Vec<SelectableRow<Row, F>>`: A reference to the vector of formatted rows ready for display.
+    pub const fn get_displayed_rows(&self) -> &Vec<SelectableRow<Row, F>> {
+        &self.formatted_rows
+    }
+
+    /// Provides a reference to all rows in the table, regardless of whether they are displayed.
+    ///
+    /// # Returns:
+    /// - `&HashMap<i64, SelectableRow<Row, F>>`: A reference to the entire collection of rows in the table.
+    pub const fn get_all_rows(&self) -> &HashMap<i64, SelectableRow<Row, F>> {
+        &self.rows
+    }
+
+    /// Adds a serial column to the table.
+    ///
+    /// The serial column is automatically generated and displayed at the very left of the table.
+    /// It shows the row number (starting from 1) for each row.
+    ///
+    /// # Returns:
+    /// - `Self`: The modified table with the serial column enabled.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let table = SelectableTable::new(vec![col1, col2, col3])
+    ///     .config(my_config).serial_column();
+    /// ```
+    #[must_use]
+    pub const fn serial_column(mut self) -> Self {
+        self.add_serial_column = true;
+        self
     }
 }

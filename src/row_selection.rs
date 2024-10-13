@@ -2,7 +2,7 @@ use egui::ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use egui::Ui;
 use std::hash::Hash;
 
-use crate::{ColumnOperations, ColumnOrdering, SelectableTable};
+use crate::{ColumnOperations, ColumnOrdering, SelectableRow, SelectableTable};
 
 #[allow(clippy::too_many_lines)]
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
@@ -329,6 +329,27 @@ where
         self.last_active_column = None;
     }
 
+    pub fn get_selected_rows(&mut self) -> Vec<SelectableRow<Row, F>> {
+        let mut selected_rows = Vec::new();
+        if self.select_full_row {
+            self.active_columns.extend(self.all_columns.clone());
+        }
+
+        // Cannot use active rows to iter as that does not maintain any proper format
+        for row in &self.formatted_rows {
+            if row.selected_columns.is_empty() {
+                continue;
+            }
+            selected_rows.push(row.clone());
+
+            // We already got all the active rows if this matches
+            if selected_rows.len() == self.active_rows.len() {
+                break;
+            }
+        }
+        selected_rows
+    }
+
     pub fn copy_selected_cells(&mut self, ui: &mut Ui) {
         let mut selected_rows = Vec::new();
         if self.select_full_row {
@@ -357,6 +378,10 @@ where
                 }
             }
             selected_rows.push(row);
+            // We already got all the active rows if this matches
+            if selected_rows.len() == self.active_rows.len() {
+                break;
+            }
         }
 
         let mut to_copy = String::new();
