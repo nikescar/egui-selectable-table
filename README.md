@@ -1,8 +1,10 @@
 # egui-selectable-table
+<a href="https://crates.io/crates/egui-selectable-table"><img src="https://img.shields.io/crates/v/egui-selectable-table.svg?style=flat-square&logo=rust&color=orange" alt="Crates version"/></a>
+<a href="https://crates.io/crates/egui-selectable-table"><img src="https://img.shields.io/crates/d/egui-selectable-table?style=flat-square" alt="Downloads"/></a>
 
 A library for [egui](https://github.com/emilk/egui) to create tables with draggable cell and row selection.
 
-[](https://github.com/user-attachments/assets/88c889fd-9686-4b96-801e-dadb87de3176)
+[](https://github.com/user-attachments/assets/54aadfbf-e795-4948-933b-68c08dce6242)
 
 ## Features
 
@@ -15,7 +17,69 @@ A library for [egui](https://github.com/emilk/egui) to create tables with dragga
 
 ## Usage
 
-This is still a work in progress and is not available on crates yet.
+```rust
+// See Demo folder for a complete example
+
+use egui_selectable_table::{
+    ColumnOperations, ColumnOrdering, SelectableRow, SelectableTable, SortOrder,
+};
+// other use imports
+
+struct Config {
+// anything you want to pass
+}
+
+struct MyRow {
+  field_1: String,
+// .. more fields
+}
+enum Column {
+  Field1,
+// .. more column names
+}
+
+// Implement both traits for row and column
+impl ColumnOperations<MyRow, ColumnName, Config> for Column {
+    // The text of a row based on the column
+    fn column_text(&self, row: &WhiteListRowData) -> String {}
+    // Create your own header or no header
+    fn create_header(&self, ui: &mut Ui, sort_order: Option<SortOrder>, table: &mut SelectableTable<MyRow, Column, Config>) -> Option<Response> {}
+    //Create your own table row UI
+    fn create_table_row(&self, ui: &mut Ui, row: &SelectableRow<MyRow, Column>, selected: bool, table: &mut SelectableTable<MyRow, Column, Config>,) -> Response {}
+}
+impl ColumnOrdering<MyRow> for Column {
+    fn order_by(&self, row_1: &MyRow, row_2: &MyRow) -> std::cmp::Ordering {
+        match self {
+            Column::Field1 => row_1.field_1.cmp(&row_2.field_1),
+        }
+    }
+}
+
+pub struct MainWindow {
+    table: SelectableTable<MyRow, Column, Config>
+}
+
+impl MainWindow {
+    pub fn new() -> Self {
+        Self {
+            table: SelectableTable::new(vec![Column::Field1])
+        }
+    }
+}
+
+impl eframe::App for MainWindow {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.table.show_ui(ui |table| {
+              table.striped(true)
+                .cell_layout(Layout::left_to_right(Align::Center))
+                .column(Column::exact(column_size).clip(true))
+            })
+        });
+    }
+}
+
+```
 
 ## Run Demo
 
