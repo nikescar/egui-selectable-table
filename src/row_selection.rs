@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use crate::{ColumnOperations, ColumnOrdering, SelectableRow, SelectableTable};
 
+/// Functions related to selection of rows and columns
 #[allow(clippy::too_many_lines)]
 impl<Row, F, Conf> SelectableTable<Row, F, Conf>
 where
@@ -101,7 +102,6 @@ where
 
                 new_column_set.insert(col);
 
-                // if next_column == ColumnName::from_num(ongoing_column_num) {
                 if &next_column == column_name {
                     new_column_set.insert(next_column);
                     ongoing_val = None;
@@ -300,6 +300,18 @@ where
         }
     }
 
+    /// Unselects all currently selected rows and columns.
+    ///
+    /// Clears the selection in both rows and columns, and resets internal tracking of active rows
+    /// and columns. After this call, there will be no selected rows or columns in the table.
+    ///
+    /// # Panics:
+    /// This method will panic if the indexed ID or the corresponding row cannot be found.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.unselect_all(); // Unselects everything in the table.
+    /// ```
     pub fn unselect_all(&mut self) {
         for id in &self.active_rows {
             let id_index = self.indexed_ids.get(id).expect("Could not get id index");
@@ -315,6 +327,14 @@ where
         self.active_rows.clear();
     }
 
+    /// Selects all rows and columns in the table.
+    ///
+    /// After calling this method, all rows will have all columns selected.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.select_all(); // Selects all rows and columns.
+    /// ```
     pub fn select_all(&mut self) {
         let mut all_rows = Vec::new();
 
@@ -329,6 +349,20 @@ where
         self.last_active_column = None;
     }
 
+    /// Retrieves the currently selected rows.
+    ///
+    /// This method returns a vector of the rows that have one or more columns selected.
+    ///
+    /// If the `select_full_row` flag is enabled, it will ensure that all columns are selected for
+    /// each active row.
+    ///
+    /// # Returns:
+    /// A `Vec` of `SelectableRow` instances that are currently selected.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let selected_rows = table.get_selected_rows();
+    /// ```
     pub fn get_selected_rows(&mut self) -> Vec<SelectableRow<Row, F>> {
         let mut selected_rows = Vec::new();
         if self.select_full_row {
@@ -350,6 +384,18 @@ where
         selected_rows
     }
 
+    /// Copies selected cells to the system clipboard in a tabular format.
+    ///
+    /// This method copies only the selected cells from each row to the clipboard, and ensures
+    /// that the column widths align for better readability when pasted into a text editor or spreadsheet.
+    ///
+    /// # Parameters:
+    /// - `ui`: The UI context used for clipboard interaction.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.copy_selected_cells(&mut ui);
+    /// ```
     pub fn copy_selected_cells(&mut self, ui: &mut Ui) {
         let mut selected_rows = Vec::new();
         if self.select_full_row {
@@ -424,12 +470,33 @@ where
         ui.ctx().output_mut(|i| i.copied_text = to_copy);
     }
 
+    /// Enables the selection of full rows in the table.
+    ///
+    /// After calling this method, selecting any column in a row will result in the entire row being selected.
+    ///
+    /// # Returns:
+    /// A new instance of the table with full row selection enabled.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let table = SelectableTable::new(vec![col1, col2, col3])
+    ///     .select_full_row();
+    /// ```
     #[must_use]
     pub const fn select_full_row(mut self) -> Self {
         self.select_full_row = true;
         self
     }
 
+    /// Sets whether the table should select full rows when a column is selected.
+    ///
+    /// # Parameters:
+    /// - `status`: `true` to enable full row selection, `false` to disable it.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// table.set_select_full_row(true); // Enable full row selection.
+    /// ```
     pub fn set_select_full_row(&mut self, status: bool) {
         self.select_full_row = status;
     }

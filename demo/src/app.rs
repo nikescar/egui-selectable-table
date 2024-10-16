@@ -105,14 +105,14 @@ impl App for MainWindow {
             ui.separator();
             ui.horizontal(|ui| {
                 ui.label("Row Recreation Counter:");
-                ui.add(Slider::new(&mut self.reload_counter, 5000..=100000));
-                ui.label("Higher value = Less often the UI is refreshed. Can improve performance")
+                ui.add(Slider::new(&mut self.reload_counter, 10000..=1000000));
+                ui.label("Higher value = Less often the UI is refreshed")
             });
             ui.separator();
 
             if self.row_count * 10 / 100 > self.reload_counter as u64 {
                 ui.horizontal(|ui| {
-                    ui.label("⚠️ Row count too high. Increase recreation counter to reduce lag");
+                    ui.label("⚠  Row count too high. Increase recreation counter to prevent ui freeze");
                 });
                 ui.separator();
             }
