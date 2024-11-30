@@ -1,6 +1,6 @@
 [package]
 name = "egui-selectable-table"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["TheRustyPickle <rusty.pickle94@gmail.com>"]
 readme = "README.md"
@@ -33,3 +33,4 @@ unwrap_used = { level = "deny", priority = 5 }
 # might be useful to enable in the future
 expect_used = { level = "allow", priority = 6 }
 missing_panics_doc = { level = "allow", priority = 7 }
+struct_excessive_bools = { level = "allow", priority = 8 }
