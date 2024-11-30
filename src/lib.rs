@@ -5,7 +5,7 @@ mod row_selection;
 use auto_reload::AutoReload;
 pub use auto_scroll::AutoScroll;
 use egui::ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use egui::{Event, Key, Label, Response, Sense, Ui};
+use egui::{Event, Key, Label, Response, ScrollArea, Sense, Ui};
 use egui_extras::{Column, TableBuilder, TableRow};
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -229,6 +229,8 @@ where
     auto_reload: AutoReload,
     /// Whether to select the entire row when dragging and selecting instead of a single cell
     select_full_row: bool,
+    /// Whether to add a horizontal scrollbar
+    horizontal_scroll: bool,
     /// Additional Parameters passed by you, available when creating new rows or header. Can
     /// contain anything implementing the `Default` trait
     pub config: Conf,
@@ -289,6 +291,7 @@ where
             auto_scroll: AutoScroll::default(),
             auto_reload: AutoReload::default(),
             select_full_row: false,
+            horizontal_scroll: false,
             config: Conf::default(),
             add_serial_column: false,
         }
@@ -369,70 +372,110 @@ where
         let pointer = ui.input(|i| i.pointer.hover_pos());
         let max_rect = ui.max_rect();
 
-        let mut table = TableBuilder::new(ui);
+        if self.horizontal_scroll {
+            ScrollArea::horizontal().show(ui, |ui| {
+                let mut table = TableBuilder::new(ui);
+
+                if self.add_serial_column {
+                    table = table.column(Column::initial(25.0).clip(true));
+                }
+
+                table = table_builder(table);
+
+                if self.drag_started_on.is_some() {
+                    if let Some(offset) = self.auto_scroll.start_scroll(max_rect, pointer) {
+                        table = table.vertical_scroll_offset(offset);
+                        ctx.request_repaint();
+                    }
+                };
+
+                let output = table
+                    .header(20.0, |header| {
+                        self.build_head(header);
+                    })
+                    .body(|body| {
+                        body.rows(25.0, self.formatted_rows.len(), |row| {
+                            let index = row.index();
+                            self.build_body(row, index);
+                        });
+                    });
+                let scroll_offset = output.state.offset.y;
+                self.update_scroll_offset(scroll_offset);
+            });
+        } else {
+            let mut table = TableBuilder::new(ui);
+
+            if self.add_serial_column {
+                table = table.column(Column::initial(25.0).clip(true));
+            }
+
+            table = table_builder(table);
+
+            if self.drag_started_on.is_some() {
+                if let Some(offset) = self.auto_scroll.start_scroll(max_rect, pointer) {
+                    table = table.vertical_scroll_offset(offset);
+                    ctx.request_repaint();
+                }
+            };
+
+            let output = table
+                .header(20.0, |header| {
+                    self.build_head(header);
+                })
+                .body(|body| {
+                    body.rows(25.0, self.formatted_rows.len(), |row| {
+                        let index = row.index();
+                        self.build_body(row, index);
+                    });
+                });
+            let scroll_offset = output.state.offset.y;
+            self.update_scroll_offset(scroll_offset);
+        }
+    }
+
+    fn build_head(&mut self, mut header: TableRow) {
+        if self.add_serial_column {
+            header.col(|ui| {
+                ui.add_sized(ui.available_size(), Label::new(""));
+            });
+        }
+        for column_name in &self.all_columns.clone() {
+            header.col(|ui| {
+                let sort_order = if &self.sorted_by == column_name {
+                    Some(self.sort_order)
+                } else {
+                    None
+                };
+
+                let Some(resp) = column_name.create_header(ui, sort_order, self) else {
+                    return;
+                };
+
+                // Response click sense is not forced. So if a header should not be used
+                // for sorting, without click there won't be any actions.
+
+                if resp.clicked() {
+                    let is_selected = &self.sorted_by == column_name;
+                    if is_selected {
+                        self.change_sort_order();
+                    } else {
+                        self.change_sorted_by(column_name);
+                    }
+                    self.recreate_rows();
+                }
+            });
+        }
+    }
+
+    fn build_body(&mut self, mut row: TableRow, index: usize) {
+        let row_data = self.formatted_rows[index].clone();
 
         if self.add_serial_column {
-            table = table.column(Column::initial(25.0).clip(true));
-        }
-
-        table = table_builder(table);
-
-        if self.drag_started_on.is_some() {
-            if let Some(offset) = self.auto_scroll.start_scroll(max_rect, pointer) {
-                table = table.vertical_scroll_offset(offset);
-                ctx.request_repaint();
-            }
-        };
-
-        let output = table
-            .header(20.0, |mut header| {
-                if self.add_serial_column {
-                    header.col(|ui| {
-                        ui.add_sized(ui.available_size(), Label::new(""));
-                    });
-                }
-                for column_name in &self.all_columns.clone() {
-                    header.col(|ui| {
-                        let sort_order = if &self.sorted_by == column_name {
-                            Some(self.sort_order)
-                        } else {
-                            None
-                        };
-
-                        let Some(resp) = column_name.create_header(ui, sort_order, self) else {
-                            return;
-                        };
-
-                        // Response click sense is not forced. So if a header should not be used
-                        // for sorting, without click there won't be any actions.
-
-                        if resp.clicked() {
-                            let is_selected = &self.sorted_by == column_name;
-                            if is_selected {
-                                self.change_sort_order();
-                            } else {
-                                self.change_sorted_by(column_name);
-                            }
-                            self.recreate_rows();
-                        }
-                    });
-                }
-            })
-            .body(|body| {
-                body.rows(25.0, self.formatted_rows.len(), |mut row| {
-                    let index = row.index();
-                    let row_data = self.formatted_rows[index].clone();
-
-                    if self.add_serial_column {
-                        row.col(|ui| {
-                            ui.add_sized(ui.available_size(), Label::new(format!("{}", index + 1)));
-                        });
-                    }
-                    self.handle_table_body(row, &row_data);
-                });
+            row.col(|ui| {
+                ui.add_sized(ui.available_size(), Label::new(format!("{}", index + 1)));
             });
-        let scroll_offset = output.state.offset.y;
-        self.update_scroll_offset(scroll_offset);
+        }
+        self.handle_table_body(row, &row_data);
     }
 
     /// Modify or add rows to the table. Changes are not immediately reflected in the UI.
@@ -718,6 +761,22 @@ where
     #[must_use]
     pub const fn serial_column(mut self) -> Self {
         self.add_serial_column = true;
+        self
+    }
+
+    /// Add a horizontal scrollbar to the table
+    ///
+    /// # Returns:
+    /// - `Self`: The modified table with the serial column enabled.
+    ///
+    /// # Example:
+    /// ```rust,ignore
+    /// let table = SelectableTable::new(vec![col1, col2, col3])
+    ///     .horizontal_scroll();
+    /// ```
+    #[must_use]
+    pub const fn horizontal_scroll(mut self) -> Self {
+        self.horizontal_scroll = true;
         self
     }
 }

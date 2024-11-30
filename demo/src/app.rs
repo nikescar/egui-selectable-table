@@ -38,7 +38,8 @@ impl MainWindow {
         // Auto reload after each 10k table row add or modification
         let table = SelectableTable::new(all_columns)
             .auto_reload(10_000)
-            .auto_scroll();
+            .auto_scroll()
+            .horizontal_scroll();
 
         MainWindow {
             select_entire_row: false,
@@ -112,7 +113,9 @@ impl App for MainWindow {
 
             if self.row_count * 10 / 100 > self.reload_counter as u64 {
                 ui.horizontal(|ui| {
-                    ui.label("⚠  Row count too high. Increase recreation counter to prevent ui freeze");
+                    ui.label(
+                        "⚠  Row count too high. Increase recreation counter to prevent ui freeze",
+                    );
                 });
                 ui.separator();
             }
