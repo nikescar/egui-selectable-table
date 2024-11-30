@@ -1,4 +1,5 @@
 # egui-selectable-table
+
 <a href="https://crates.io/crates/egui-selectable-table"><img src="https://img.shields.io/crates/v/egui-selectable-table.svg?style=flat-square&logo=rust&color=orange" alt="Crates version"/></a>
 <a href="https://crates.io/crates/egui-selectable-table"><img src="https://img.shields.io/crates/d/egui-selectable-table?style=flat-square" alt="Downloads"/></a>
 [![Docs](https://img.shields.io/docsrs/egui-selectable-table/latest)](https://docs.rs/egui-selectable-table)
