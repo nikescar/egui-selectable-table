@@ -466,8 +466,7 @@ where
             to_copy.push_str(&row_text);
             to_copy.push('\n');
         }
-
-        ui.ctx().output_mut(|i| i.copied_text = to_copy);
+        ui.ctx().copy_text(to_copy);
     }
 
     /// Enables the selection of full rows in the table.
